@@ -3,7 +3,6 @@
 
 MyNode::MyNode() : Node("my_node")
 {
-  // Callback groups
   cb_group_service_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cb_group_service_client_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cb_group_action_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -11,20 +10,17 @@ MyNode::MyNode() : Node("my_node")
   cb_group_timer_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cb_group_topic_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-  // Service Server (deprecated warning suppressed by direct use of QoS)
   srv_ = this->create_service<std_srvs::srv::Trigger>(
     "trigger",
     std::bind(&MyNode::handle_service, this, std::placeholders::_1, std::placeholders::_2),
     rclcpp::QoS(10),
     cb_group_service_);
 
-  // Service Client (deprecated warning suppressed by direct use of QoS)
   srv_client_ = this->create_client<std_srvs::srv::Trigger>(
     "trigger",
     rclcpp::QoS(10),
     cb_group_service_client_);
 
-  // Action Server
   action_server_ = rclcpp_action::create_server<Fibonacci>(
     this,
     "fibonacci",
@@ -34,13 +30,10 @@ MyNode::MyNode() : Node("my_node")
     rcl_action_server_get_default_options(),
     cb_group_action_);
 
-  // Action Client
   action_client_ = rclcpp_action::create_client<Fibonacci>(this, "fibonacci", cb_group_action_client_);
 
-  // Publisher
   pub_ = this->create_publisher<std_msgs::msg::String>("chatter", 10);
 
-  // Subscriber
   rclcpp::SubscriptionOptions sub_opts;
   sub_opts.callback_group = cb_group_topic_;
   sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -48,7 +41,6 @@ MyNode::MyNode() : Node("my_node")
     std::bind(&MyNode::topic_callback, this, std::placeholders::_1),
     sub_opts);
 
-  // Timer
   timer_ = this->create_wall_timer(
     std::chrono::seconds(1),
     std::bind(&MyNode::timer_callback, this),
@@ -70,8 +62,21 @@ void MyNode::call_service()
     RCLCPP_WARN(this->get_logger(), "Service not available");
     return;
   }
+
   auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-  srv_client_->async_send_request(request);
+
+  auto future = srv_client_->async_send_request(request);
+
+  try {
+    auto response = future.get();
+    if (response->success) {
+      RCLCPP_INFO(this->get_logger(), "Service call success: %s", response->message.c_str());
+    } else {
+      RCLCPP_WARN(this->get_logger(), "Service call failed: %s", response->message.c_str());
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(this->get_logger(), "Service call exception: %s", e.what());
+  }
 }
 
 rclcpp_action::GoalResponse MyNode::handle_goal(
@@ -120,10 +125,56 @@ void MyNode::send_goal()
     RCLCPP_WARN(this->get_logger(), "Action server not available");
     return;
   }
-  auto goal_msg = Fibonacci::Goal();
-  goal_msg.order = 5;
 
-  action_client_->async_send_goal(goal_msg);
+  auto goal_msg = std::make_shared<Fibonacci::Goal>();
+  goal_msg->order = 5;
+
+  rclcpp_action::Client<Fibonacci>::SendGoalOptions send_goal_options;
+
+  send_goal_options.goal_response_callback =
+    [this](GoalHandleFibonacciClient::SharedPtr goal_handle) {
+      if (!goal_handle) {
+        RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result...");
+      }
+    };
+
+  send_goal_options.feedback_callback =
+    [this](GoalHandleFibonacciClient::SharedPtr,
+           const std::shared_ptr<const Fibonacci::Feedback> feedback) {
+      std::ostringstream oss;
+      for (auto num : feedback->sequence) {
+        oss << num << " ";
+      }
+      RCLCPP_INFO(this->get_logger(), "Feedback: [%s]", oss.str().c_str());
+    };
+
+  send_goal_options.result_callback =
+    [this](const GoalHandleFibonacciClient::WrappedResult & result) {
+      switch (result.code) {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+          RCLCPP_INFO(this->get_logger(), "Action succeeded.");
+          break;
+        case rclcpp_action::ResultCode::ABORTED:
+          RCLCPP_ERROR(this->get_logger(), "Action was aborted.");
+          return;
+        case rclcpp_action::ResultCode::CANCELED:
+          RCLCPP_WARN(this->get_logger(), "Action was canceled.");
+          return;
+        default:
+          RCLCPP_ERROR(this->get_logger(), "Unknown result code.");
+          return;
+      }
+
+      std::ostringstream oss;
+      for (auto num : result.result->sequence) {
+        oss << num << " ";
+      }
+      RCLCPP_INFO(this->get_logger(), "Final Result: [%s]", oss.str().c_str());
+    };
+
+  action_client_->async_send_goal(*goal_msg, send_goal_options);
 }
 
 void MyNode::topic_callback(const std_msgs::msg::String::SharedPtr msg)
@@ -140,4 +191,4 @@ void MyNode::timer_callback()
 
   call_service();
   send_goal();
-} 
+}
