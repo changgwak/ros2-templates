@@ -3,7 +3,6 @@
 
 MyNode::MyNode() : Node("my_node")
 {
-  // Callback groups
   cb_group_service_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cb_group_service_client_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cb_group_action_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -11,20 +10,17 @@ MyNode::MyNode() : Node("my_node")
   cb_group_timer_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cb_group_topic_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
-  // Service Server
   srv_ = this->create_service<std_srvs::srv::Trigger>(
     "trigger",
     std::bind(&MyNode::handle_service, this, std::placeholders::_1, std::placeholders::_2),
     rclcpp::QoS(10),
     cb_group_service_);
 
-  // Service Client
   srv_client_ = this->create_client<std_srvs::srv::Trigger>(
     "trigger",
     rclcpp::QoS(10),
     cb_group_service_client_);
 
-  // Action Server
   action_server_ = rclcpp_action::create_server<Fibonacci>(
     this,
     "fibonacci",
@@ -34,13 +30,10 @@ MyNode::MyNode() : Node("my_node")
     rcl_action_server_get_default_options(),
     cb_group_action_);
 
-  // Action Client
   action_client_ = rclcpp_action::create_client<Fibonacci>(this, "fibonacci", cb_group_action_client_);
 
-  // Publisher
   pub_ = this->create_publisher<std_msgs::msg::String>("chatter", 10);
 
-  // Subscriber
   rclcpp::SubscriptionOptions sub_opts;
   sub_opts.callback_group = cb_group_topic_;
   sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -48,7 +41,6 @@ MyNode::MyNode() : Node("my_node")
     std::bind(&MyNode::topic_callback, this, std::placeholders::_1),
     sub_opts);
 
-  // Timer
   timer_ = this->create_wall_timer(
     std::chrono::seconds(1),
     std::bind(&MyNode::timer_callback, this),
@@ -139,7 +131,6 @@ void MyNode::send_goal()
 
   auto send_goal_options = rclcpp_action::Client<Fibonacci>::SendGoalOptions();
 
-  // Goal response callback
   send_goal_options.goal_response_callback =
     [this](std::shared_future<GoalHandleFibonacci::SharedPtr> future) {
       auto goal_handle = future.get();
@@ -150,7 +141,6 @@ void MyNode::send_goal()
       }
     };
 
-  // Feedback callback
   send_goal_options.feedback_callback =
     [this](GoalHandleFibonacci::SharedPtr,
            const std::shared_ptr<const Fibonacci::Feedback> feedback) {
@@ -161,7 +151,6 @@ void MyNode::send_goal()
       RCLCPP_INFO(this->get_logger(), "Feedback: [%s]", oss.str().c_str());
     };
 
-  // Result callback
   send_goal_options.result_callback =
     [this](const GoalHandleFibonacci::WrappedResult & result) {
       switch (result.code) {
