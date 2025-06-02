@@ -132,8 +132,7 @@ void MyNode::send_goal()
   rclcpp_action::Client<Fibonacci>::SendGoalOptions send_goal_options;
 
   send_goal_options.goal_response_callback =
-    [this](std::shared_future<GoalHandleFibonacci::SharedPtr> future) {
-      auto goal_handle = future.get();
+    [this](GoalHandleFibonacci::SharedPtr goal_handle) {
       if (!goal_handle) {
         RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
       } else {
@@ -145,7 +144,7 @@ void MyNode::send_goal()
     [this](GoalHandleFibonacci::SharedPtr,
            const std::shared_ptr<const Fibonacci::Feedback> feedback) {
       std::ostringstream oss;
-      for (auto num : feedback->partial_sequence) {
+      for (auto num : feedback->sequence) {
         oss << num << " ";
       }
       RCLCPP_INFO(this->get_logger(), "Feedback: [%s]", oss.str().c_str());
