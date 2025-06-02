@@ -118,7 +118,6 @@ void MyNode::execute(const std::shared_ptr<GoalHandleFibonacci> goal_handle)
   goal_handle->succeed(result);
   RCLCPP_INFO(this->get_logger(), "Goal succeeded");
 }
-
 void MyNode::send_goal()
 {
   if (!action_client_->wait_for_action_server(std::chrono::seconds(1))) {
@@ -129,9 +128,11 @@ void MyNode::send_goal()
   auto goal_msg = Fibonacci::Goal();
   goal_msg.order = 5;
 
-  auto send_goal_options = rclcpp_action::Client<Fibonacci>::SendGoalOptions();
+  auto goal = std::make_shared<Fibonacci::Goal>(goal_msg);  // ensure shared_ptr lifetime
 
-  send_goal_options.goal_response_callback =
+  rclcpp_action::Client<Fibonacci>::SendGoalOptions options;
+
+  options.goal_response_callback =
     [this](std::shared_future<GoalHandleFibonacci::SharedPtr> future) {
       auto goal_handle = future.get();
       if (!goal_handle) {
@@ -141,17 +142,17 @@ void MyNode::send_goal()
       }
     };
 
-  send_goal_options.feedback_callback =
+  options.feedback_callback =
     [this](GoalHandleFibonacci::SharedPtr,
            const std::shared_ptr<const Fibonacci::Feedback> feedback) {
       std::ostringstream oss;
-      for (auto num : feedback->partial_sequence) {
+      for (const auto & num : feedback->partial_sequence) {
         oss << num << " ";
       }
       RCLCPP_INFO(this->get_logger(), "Feedback: [%s]", oss.str().c_str());
     };
 
-  send_goal_options.result_callback =
+  options.result_callback =
     [this](const GoalHandleFibonacci::WrappedResult & result) {
       switch (result.code) {
         case rclcpp_action::ResultCode::SUCCEEDED:
@@ -169,13 +170,13 @@ void MyNode::send_goal()
       }
 
       std::ostringstream oss;
-      for (auto num : result.result->sequence) {
+      for (const auto & num : result.result->sequence) {
         oss << num << " ";
       }
       RCLCPP_INFO(this->get_logger(), "Final Result: [%s]", oss.str().c_str());
     };
 
-  action_client_->async_send_goal(goal_msg, send_goal_options);
+  action_client_->async_send_goal(*goal, options);
 }
 
 void MyNode::topic_callback(const std_msgs::msg::String::SharedPtr msg)
